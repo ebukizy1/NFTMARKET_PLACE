@@ -1,61 +1,95 @@
+
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.0;
 
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
-import "@openzeppelin/contracts/utils/math/SafeMath.sol";
+import "@openzeppelin/contracts/utils/Counters.sol";
 
 
-contract NFTMarketplace {
-    using SafeMath for uint256;
+contract EmaxShoopingNFTMarketplace is ERC721 {
+    using Counters for Counters.Counter;
+    Counters.Counter private _tokenIds;
 
-    struct Listing {
-        address seller;
+    error CALLER_NOT_AUTHORIZED();
+    error INVALID_MINTERS_ADDRESS(); 
+
+    struct EmaxProductNFT {
+        uint256 id;
+        address creator;
+        string imageUrl;
         uint256 price;
-        bool isAvailable;
+        bool forSale;
     }
 
-    mapping(uint256 => Listing) public listings;
-    mapping(address => uint256[]) public listedTokens;
 
-    event NFTListed(uint256 indexed tokenId, address indexed seller, uint256 price);
-    event NFTSold(uint256 indexed tokenId, address indexed seller, address indexed buyer, uint256 price);
+    mapping(uint256 => EmaxProductNFT) private productNFTs;
+    mapping(address => bool) private authorizedMinters;
 
-    ERC721 public nft;
+    constructor() ERC721("VideoNFT", "VNFT") {}
 
-    constructor(address _nftAddress) {
-        nft = ERC721(_nftAddress);
+    modifier onlyMinter() {
+        if(!authorizedMinters[msg.sender]){
+            revert CALLER_NOT_AUTHORIZED();
+        }
+        _;
     }
 
-    function listNFT(uint256 _tokenId, uint256 _price) external {
-        require(nft.ownerOf(_tokenId) == msg.sender, "Only the owner can list the NFT");
-        require(listings[_tokenId].isAvailable == false, "NFT is already listed");
-
-        listings[_tokenId] = Listing(msg.sender, _price, true);
-        listedTokens[msg.sender].push(_tokenId);
-
-        emit NFTListed(_tokenId, msg.sender, _price);
+    function addMinter(address _minter) external onlyMinter {
+       addressZeroCheck(_minter);
+        authorizedMinters[_minter] = true;
     }
 
-    function buyNFT(uint256 _tokenId) external payable {
-        Listing memory listing = listings[_tokenId];
-        require(listing.isAvailable, "NFT is not listed for sale");
-        require(msg.value >= listing.price, "Insufficient funds");
-
-        address seller = listing.seller;
-        listings[_tokenId] = Listing(address(0), 0, false);
-        nft.safeTransferFrom(seller, msg.sender, _tokenId);
-
-        payable(seller).transfer(msg.value);
-
-        emit NFTSold(_tokenId, seller, msg.sender, listing.price);
+    function removeMinter(address _minter) external onlyMinter{
+            addressZeroCheck(_minter);
+        authorizedMinters[_minter] = false;
     }
 
-    function getListing(uint256 _tokenId) external view returns (address, uint256, bool) {
-        Listing memory listing = listings[_tokenId];
-        return (listing.seller, listing.price, listing.isAvailable);
+    function mintProductNFT(string memory _imageUrl, uint256 _price) external onlyMinter {
+        _tokenIds.increment();
+        uint256 newNFTId = _tokenIds.current();
+        _mint(msg.sender, newNFTId);
+
+        EmaxProductNFT  memory _newProductNFT = EmaxProductNFT({
+            id: newNFTId,
+            creator: msg.sender,
+            imageUrl: _imageUrl,
+            price: _price,
+            forSale: false
+        });
+
+        productNFTs[newNFTId] = _newProductNFT;
     }
 
-    function getMyListedTokens() external view returns (uint256[] memory) {
-        return listedTokens[msg.sender];
+    function buyProductNFT(uint256 _tokenId) external payable {
+         EmaxProductNFT  storage nft = productNFTs[_tokenId];
+        require(nft.forSale == true, "NFT is not for sale");
+        require(msg.value >= nft.price, "Insufficient funds");
+
+        address payable seller = payable(ownerOf(_tokenId));
+        seller.transfer(msg.value);
+
+        _transfer(seller, msg.sender, _tokenId);
+        nft.forSale = false;
+    }
+
+    function sellNFT(uint256 _tokenId, uint256 _price) external {
+        require(ownerOf(_tokenId) == msg.sender, "You are not the owner of this NFT");
+
+       EmaxProductNFT storage nft = productNFTs[_tokenId];
+        require(!nft.forSale, "NFT is already for sale");
+
+        nft.price = _price;
+        nft.forSale = true;
+    }
+
+    function getNFT(uint256 _tokenId) external view returns (uint256, address, string memory, uint256, bool) {
+        EmaxProductNFT memory nft = productNFTs[_tokenId];
+        return (nft.id, nft.creator, nft.imageUrl, nft.price, nft.forSale);
+    }
+
+    function addressZeroCheck(address _minter) private pure {
+         if(_minter == address(0)){
+                revert INVALID_MINTERS_ADDRESS(); 
+         }
     }
 }
