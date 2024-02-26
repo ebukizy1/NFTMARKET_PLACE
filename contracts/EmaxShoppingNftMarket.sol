@@ -27,7 +27,7 @@ contract EmaxShoopingNFTMarketplace is ERC721,Ownable {
     mapping(uint256 => EmaxProductNFT) private productNFTs;
     mapping(address => bool) private authorizedMinters;
 
-    constructor() ERC721("VideoNFT", "VNFT") {}
+    constructor() ERC721("EmaxProductNFT", "VNFT") {}
 
     modifier onlyMinter() {
         if(!authorizedMinters[msg.sender]){
